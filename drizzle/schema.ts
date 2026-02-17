@@ -1,76 +1,87 @@
 import {
   int,
-  mysqlEnum,
-  mysqlTable,
+  varchar,
   text,
   timestamp,
-  varchar,
-  json,
-  float,
+  mysqlEnum,
+  mysqlTable,
+  decimal,
   boolean,
-  bigint,
+  json,
   index,
-  uniqueIndex,
+  primaryKey,
+  foreignKey,
 } from "drizzle-orm/mysql-core";
+import { sql } from "drizzle-orm";
 
 /**
- * Core user table backing auth flow.
+ * Core user table - manages platform users and authentication
  */
-export const users = mysqlTable("users", {
-  id: int("id").autoincrement().primaryKey(),
-  openId: varchar("openId", { length: 64 }).notNull().unique(),
-  name: text("name"),
-  email: varchar("email", { length: 320 }),
-  loginMethod: varchar("loginMethod", { length: 64 }),
-  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
-});
+export const users = mysqlTable(
+  "users",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    openId: varchar("openId", { length: 64 }).notNull().unique(),
+    name: text("name"),
+    email: varchar("email", { length: 320 }).unique(),
+    loginMethod: varchar("loginMethod", { length: 64 }),
+    role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+    lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
+  },
+  (table) => ({
+    openIdIdx: index("idx_openId").on(table.openId),
+    emailIdx: index("idx_email").on(table.email),
+  })
+);
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
 /**
- * Agent Registry - Catalog of all AI agents in the system
+ * Agent registry - manages AI agents in the swarm
  */
-export const agents = mysqlTable(
+export const swarmAgents = mysqlTable(
   "swarm_agents",
   {
-    id: varchar("id", { length: 36 }).primaryKey(), // UUID
+    id: varchar("id", { length: 64 }).primaryKey(),
+    userId: int("userId").notNull(),
     name: varchar("name", { length: 255 }).notNull(),
     type: mysqlEnum("type", ["reasoning", "execution", "coordination", "analysis"]).notNull(),
     description: text("description"),
-    capabilities: json("capabilities").$type<string[]>(),
-    status: mysqlEnum("status", ["active", "inactive", "error", "maintenance"]).default("active"),
-    llmModel: varchar("llmModel", { length: 255 }),
-    parameters: json("parameters").$type<Record<string, unknown>>(),
-    integrationFramework: varchar("integrationFramework", { length: 255 }),
-    version: varchar("version", { length: 64 }),
-    healthScore: float("healthScore").default(100),
-    successRate: float("successRate").default(100),
-    totalExecutions: int("totalExecutions").default(0),
-    failedExecutions: int("failedExecutions").default(0),
+    capabilities: json("capabilities").notNull(),
+    status: mysqlEnum("status", ["active", "inactive", "error", "maintenance"]).default("active").notNull(),
+    llmModel: varchar("llmModel", { length: 128 }),
+    parameters: json("parameters").notNull(),
+    integrationFramework: varchar("integrationFramework", { length: 128 }),
+    version: varchar("version", { length: 32 }),
+    healthScore: int("healthScore").default(100).notNull(),
+    successRate: decimal("successRate", { precision: 5, scale: 2 }).default("100.00").notNull(),
+    totalExecutions: int("totalExecutions").default(0).notNull(),
+    failedExecutions: int("failedExecutions").default(0).notNull(),
+    lastHeartbeat: timestamp("lastHeartbeat").defaultNow(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   },
   (table) => ({
-    statusIdx: index("swarm_agents_status_idx").on(table.status),
-    typeIdx: index("swarm_agents_type_idx").on(table.type),
-    frameworkIdx: index("swarm_agents_framework_idx").on(table.integrationFramework),
+    userIdIdx: index("idx_agent_userId").on(table.userId),
+    statusIdx: index("idx_agent_status").on(table.status),
+    typeIdx: index("idx_agent_type").on(table.type),
   })
 );
 
-export type Agent = typeof agents.$inferSelect;
-export type InsertAgent = typeof agents.$inferInsert;
+export type SwarmAgent = typeof swarmAgents.$inferSelect;
+export type InsertSwarmAgent = typeof swarmAgents.$inferInsert;
 
 /**
- * Workflow Definitions - Templates for multi-agent orchestration
+ * Workflows - defines multi-agent orchestration patterns
  */
 export const workflows = mysqlTable(
-  "swarm_workflows",
+  "workflows",
   {
-    id: varchar("id", { length: 36 }).primaryKey(), // UUID
+    id: varchar("id", { length: 64 }).primaryKey(),
+    userId: int("userId").notNull(),
     name: varchar("name", { length: 255 }).notNull(),
     description: text("description"),
     orchestrationPattern: mysqlEnum("orchestrationPattern", [
@@ -80,17 +91,18 @@ export const workflows = mysqlTable(
       "round_robin",
       "mesh",
     ]).notNull(),
-    nodes: json("nodes").$type<Array<Record<string, unknown>>>(),
-    edges: json("edges").$type<Array<Record<string, unknown>>>(),
-    configuration: json("configuration").$type<Record<string, unknown>>(),
-    status: mysqlEnum("status", ["draft", "active", "paused", "archived"]).default("draft"),
-    templateId: varchar("templateId", { length: 36 }),
+    nodes: json("nodes").notNull(),
+    edges: json("edges").notNull(),
+    configuration: json("configuration").notNull(),
+    status: mysqlEnum("status", ["draft", "active", "paused", "archived"]).default("draft").notNull(),
+    version: int("version").default(1).notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   },
   (table) => ({
-    statusIdx: index("swarm_workflows_status_idx").on(table.status),
-    patternIdx: index("swarm_workflows_pattern_idx").on(table.orchestrationPattern),
+    userIdIdx: index("idx_workflow_userId").on(table.userId),
+    statusIdx: index("idx_workflow_status").on(table.status),
+    patternIdx: index("idx_workflow_pattern").on(table.orchestrationPattern),
   })
 );
 
@@ -98,32 +110,30 @@ export type Workflow = typeof workflows.$inferSelect;
 export type InsertWorkflow = typeof workflows.$inferInsert;
 
 /**
- * Task Execution - Individual tasks executed by agents
+ * Tasks - execution instances of workflows
  */
 export const tasks = mysqlTable(
-  "swarm_tasks",
+  "tasks",
   {
-    id: varchar("id", { length: 36 }).primaryKey(), // UUID
-    workflowId: varchar("workflowId", { length: 36 }).notNull(),
-    input: json("input").$type<Record<string, unknown>>(),
-    assignedAgents: json("assignedAgents").$type<string[]>(),
-    status: mysqlEnum("status", ["pending", "running", "completed", "failed", "timeout"]).default("pending"),
-    priority: int("priority").default(5),
-    result: json("result").$type<Record<string, unknown>>(),
-    consensusResult: json("consensusResult").$type<Record<string, unknown>>(),
-    consensusMethod: mysqlEnum("consensusMethod", ["voting", "judge", "mixture_of_agents", "none"]).default("none"),
-    executionTime: bigint("executionTime", { mode: "number" }),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    id: varchar("id", { length: 64 }).primaryKey(),
+    userId: int("userId").notNull(),
+    workflowId: varchar("workflowId", { length: 64 }).notNull(),
+    input: json("input").notNull(),
+    assignedAgents: json("assignedAgents").notNull(),
+    priority: int("priority").default(1).notNull(),
+    status: mysqlEnum("status", ["pending", "running", "completed", "failed", "timeout"]).default("pending").notNull(),
+    result: json("result").notNull(),
+    executionTime: int("executionTime"), // milliseconds
     startedAt: timestamp("startedAt"),
     completedAt: timestamp("completedAt"),
-    retryCount: int("retryCount").default(0),
-    errorLog: text("errorLog"),
-    storageUrl: varchar("storageUrl", { length: 512 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   },
   (table) => ({
-    workflowIdx: index("swarm_tasks_workflow_idx").on(table.workflowId),
-    statusIdx: index("swarm_tasks_status_idx").on(table.status),
-    createdIdx: index("swarm_tasks_created_idx").on(table.createdAt),
+    userIdIdx: index("idx_task_userId").on(table.userId),
+    workflowIdIdx: index("idx_task_workflowId").on(table.workflowId),
+    statusIdx: index("idx_task_status").on(table.status),
+    priorityIdx: index("idx_task_priority").on(table.priority),
   })
 );
 
@@ -131,53 +141,54 @@ export type Task = typeof tasks.$inferSelect;
 export type InsertTask = typeof tasks.$inferInsert;
 
 /**
- * Agent Communication - Messages between agents
+ * Messages - inter-agent communication
  */
-export const agentMessages = mysqlTable(
-  "swarm_messages",
+export const messages = mysqlTable(
+  "messages",
   {
-    id: varchar("id", { length: 36 }).primaryKey(), // UUID
-    senderId: varchar("senderId", { length: 36 }).notNull(),
-    recipientId: varchar("recipientId", { length: 36 }),
-    taskId: varchar("taskId", { length: 36 }),
+    id: varchar("id", { length: 64 }).primaryKey(),
+    userId: int("userId").notNull(),
+    taskId: varchar("taskId", { length: 64 }).notNull(),
+    senderId: varchar("senderId", { length: 64 }).notNull(),
+    recipientId: varchar("recipientId", { length: 64 }),
     messageType: mysqlEnum("messageType", ["request", "response", "status_update", "error", "broadcast"]).notNull(),
-    content: json("content").$type<Record<string, unknown>>(),
-    timestamp: timestamp("timestamp").defaultNow().notNull(),
-    deliveryStatus: mysqlEnum("deliveryStatus", ["pending", "delivered", "acknowledged", "failed"]).default("pending"),
-    metadata: json("metadata").$type<Record<string, unknown>>(),
+    content: json("content").notNull(),
+    metadata: json("metadata").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
   (table) => ({
-    senderIdx: index("swarm_messages_sender_idx").on(table.senderId),
-    recipientIdx: index("swarm_messages_recipient_idx").on(table.recipientId),
-    taskIdx: index("swarm_messages_task_idx").on(table.taskId),
-    timestampIdx: index("swarm_messages_timestamp_idx").on(table.timestamp),
+    userIdIdx: index("idx_message_userId").on(table.userId),
+    taskIdIdx: index("idx_message_taskId").on(table.taskId),
+    senderIdIdx: index("idx_message_senderId").on(table.senderId),
+    recipientIdIdx: index("idx_message_recipientId").on(table.recipientId),
   })
 );
 
-export type AgentMessage = typeof agentMessages.$inferSelect;
-export type InsertAgentMessage = typeof agentMessages.$inferInsert;
+export type Message = typeof messages.$inferSelect;
+export type InsertMessage = typeof messages.$inferInsert;
 
 /**
- * Execution Logs - Detailed logs of agent execution
+ * Execution logs - detailed execution traces
  */
 export const executionLogs = mysqlTable(
-  "swarm_logs",
+  "execution_logs",
   {
-    id: varchar("id", { length: 36 }).primaryKey(), // UUID
-    taskId: varchar("taskId", { length: 36 }).notNull(),
-    agentId: varchar("agentId", { length: 36 }).notNull(),
+    id: varchar("id", { length: 64 }).primaryKey(),
+    userId: int("userId").notNull(),
+    taskId: varchar("taskId", { length: 64 }).notNull(),
+    agentId: varchar("agentId", { length: 64 }),
     eventType: mysqlEnum("eventType", ["execution", "decision", "error", "metric", "state_change"]).notNull(),
-    level: mysqlEnum("level", ["debug", "info", "warning", "error", "critical"]).default("info"),
-    message: text("message"),
-    metadata: json("metadata").$type<Record<string, unknown>>(),
-    timestamp: timestamp("timestamp").defaultNow().notNull(),
-    storageUrl: varchar("storageUrl", { length: 512 }),
+    level: mysqlEnum("level", ["debug", "info", "warning", "error", "critical"]).notNull(),
+    message: text("message").notNull(),
+    metadata: json("metadata").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
   (table) => ({
-    taskIdx: index("swarm_logs_task_idx").on(table.taskId),
-    agentIdx: index("swarm_logs_agent_idx").on(table.agentId),
-    timestampIdx: index("swarm_logs_timestamp_idx").on(table.timestamp),
-    levelIdx: index("swarm_logs_level_idx").on(table.level),
+    userIdIdx: index("idx_log_userId").on(table.userId),
+    taskIdIdx: index("idx_log_taskId").on(table.taskId),
+    agentIdIdx: index("idx_log_agentId").on(table.agentId),
+    eventTypeIdx: index("idx_log_eventType").on(table.eventType),
+    levelIdx: index("idx_log_level").on(table.level),
   })
 );
 
@@ -185,94 +196,39 @@ export type ExecutionLog = typeof executionLogs.$inferSelect;
 export type InsertExecutionLog = typeof executionLogs.$inferInsert;
 
 /**
- * Orchestration Configuration - Settings for specific orchestration patterns
+ * Metrics - agent and task performance metrics
  */
-export const orchestrationConfigs = mysqlTable(
-  "swarm_configs",
+export const metrics = mysqlTable(
+  "metrics",
   {
-    id: varchar("id", { length: 36 }).primaryKey(), // UUID
-    workflowId: varchar("workflowId", { length: 36 }).notNull().unique(),
-    hierarchyRules: json("hierarchyRules").$type<Record<string, unknown>>(),
-    sequenceRules: json("sequenceRules").$type<Record<string, unknown>>(),
-    concurrencyRules: json("concurrencyRules").$type<Record<string, unknown>>(),
-    roundRobinRules: json("roundRobinRules").$type<Record<string, unknown>>(),
-    consensusStrategy: json("consensusStrategy").$type<Record<string, unknown>>(),
-    timeoutPolicy: json("timeoutPolicy").$type<Record<string, unknown>>(),
-    resourceLimits: json("resourceLimits").$type<Record<string, unknown>>(),
+    id: varchar("id", { length: 64 }).primaryKey(),
+    userId: int("userId").notNull(),
+    agentId: varchar("agentId", { length: 64 }).notNull(),
+    taskId: varchar("taskId", { length: 64 }),
+    executionTime: int("executionTime").notNull(), // milliseconds
+    tokenUsage: int("tokenUsage").default(0).notNull(),
+    estimatedCost: decimal("estimatedCost", { precision: 10, scale: 6 }).default("0.000000").notNull(),
+    successFlag: boolean("successFlag").default(true).notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   },
   (table) => ({
-    workflowIdx: index("swarm_config_workflow_idx").on(table.workflowId),
+    userIdIdx: index("idx_metric_userId").on(table.userId),
+    agentIdIdx: index("idx_metric_agentId").on(table.agentId),
+    taskIdIdx: index("idx_metric_taskId").on(table.taskId),
   })
 );
 
-export type OrchestrationConfig = typeof orchestrationConfigs.$inferSelect;
-export type InsertOrchestrationConfig = typeof orchestrationConfigs.$inferInsert;
+export type Metric = typeof metrics.$inferSelect;
+export type InsertMetric = typeof metrics.$inferInsert;
 
 /**
- * Workflow Templates - Pre-configured swarm architectures
+ * Alerts - critical event notifications
  */
-export const workflowTemplates = mysqlTable(
-  "swarm_templates",
+export const alerts = mysqlTable(
+  "alerts",
   {
-    id: varchar("id", { length: 36 }).primaryKey(), // UUID
-    name: varchar("name", { length: 255 }).notNull(),
-    description: text("description"),
-    category: mysqlEnum("category", [
-      "hierarchical",
-      "sequential",
-      "concurrent",
-      "round_robin",
-      "mesh",
-      "mixture_of_agents",
-    ]).notNull(),
-    templateData: json("templateData").$type<Record<string, unknown>>(),
-    previewImage: varchar("previewImage", { length: 512 }),
-    isPublic: boolean("isPublic").default(true),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  },
-  (table) => ({
-    categoryIdx: index("swarm_templates_category_idx").on(table.category),
-  })
-);
-
-export type WorkflowTemplate = typeof workflowTemplates.$inferSelect;
-export type InsertWorkflowTemplate = typeof workflowTemplates.$inferInsert;
-
-/**
- * Agent Performance Metrics - Real-time performance tracking
- */
-export const agentMetrics = mysqlTable(
-  "swarm_metrics",
-  {
-    id: varchar("id", { length: 36 }).primaryKey(), // UUID
-    agentId: varchar("agentId", { length: 36 }).notNull(),
-    taskId: varchar("taskId", { length: 36 }),
-    executionTime: bigint("executionTime", { mode: "number" }),
-    tokenUsage: int("tokenUsage"),
-    estimatedCost: float("estimatedCost"),
-    successFlag: boolean("successFlag"),
-    timestamp: timestamp("timestamp").defaultNow().notNull(),
-  },
-  (table) => ({
-    agentIdx: index("swarm_metrics_agent_idx").on(table.agentId),
-    taskIdx: index("swarm_metrics_task_idx").on(table.taskId),
-    timestampIdx: index("swarm_metrics_timestamp_idx").on(table.timestamp),
-  })
-);
-
-export type AgentMetric = typeof agentMetrics.$inferSelect;
-export type InsertAgentMetric = typeof agentMetrics.$inferInsert;
-
-/**
- * System Alerts - Critical events and notifications
- */
-export const systemAlerts = mysqlTable(
-  "swarm_alerts",
-  {
-    id: varchar("id", { length: 36 }).primaryKey(), // UUID
+    id: varchar("id", { length: 64 }).primaryKey(),
+    userId: int("userId").notNull(),
     alertType: mysqlEnum("alertType", [
       "agent_failure",
       "task_timeout",
@@ -280,72 +236,186 @@ export const systemAlerts = mysqlTable(
       "task_completion",
       "performance_degradation",
     ]).notNull(),
-    severity: mysqlEnum("severity", ["info", "warning", "critical"]).default("info"),
+    severity: mysqlEnum("severity", ["info", "warning", "critical"]).notNull(),
     title: varchar("title", { length: 255 }).notNull(),
-    message: text("message"),
-    relatedAgentId: varchar("relatedAgentId", { length: 36 }),
-    relatedTaskId: varchar("relatedTaskId", { length: 36 }),
-    isResolved: boolean("isResolved").default(false),
+    message: text("message").notNull(),
+    relatedAgentId: varchar("relatedAgentId", { length: 64 }),
+    relatedTaskId: varchar("relatedTaskId", { length: 64 }),
+    resolved: boolean("resolved").default(false).notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     resolvedAt: timestamp("resolvedAt"),
   },
   (table) => ({
-    typeIdx: index("swarm_alerts_type_idx").on(table.alertType),
-    severityIdx: index("swarm_alerts_severity_idx").on(table.severity),
-    createdIdx: index("swarm_alerts_created_idx").on(table.createdAt),
+    userIdIdx: index("idx_alert_userId").on(table.userId),
+    alertTypeIdx: index("idx_alert_alertType").on(table.alertType),
+    severityIdx: index("idx_alert_severity").on(table.severity),
+    resolvedIdx: index("idx_alert_resolved").on(table.resolved),
   })
 );
 
-export type SystemAlert = typeof systemAlerts.$inferSelect;
-export type InsertSystemAlert = typeof systemAlerts.$inferInsert;
+export type Alert = typeof alerts.$inferSelect;
+export type InsertAlert = typeof alerts.$inferInsert;
 
 /**
- * Integration Modules - Registered open-source project integrations
+ * Integration configurations - framework and provider settings
  */
-export const integrationModules = mysqlTable(
-  "swarm_integrations",
+export const integrations = mysqlTable(
+  "integrations",
   {
-    id: varchar("id", { length: 36 }).primaryKey(), // UUID
-    name: varchar("name", { length: 255 }).notNull(),
-    framework: varchar("framework", { length: 255 }).notNull(),
-    version: varchar("version", { length: 64 }),
-    description: text("description"),
-    capabilities: json("capabilities").$type<string[]>(),
-    configuration: json("configuration").$type<Record<string, unknown>>(),
-    isActive: boolean("isActive").default(true),
+    id: varchar("id", { length: 64 }).primaryKey(),
+    userId: int("userId").notNull(),
+    framework: varchar("framework", { length: 128 }).notNull(),
+    version: varchar("version", { length: 32 }).notNull(),
+    active: boolean("active").default(true).notNull(),
+    configuration: json("configuration").notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   },
   (table) => ({
-    frameworkIdx: index("swarm_integrations_framework_idx").on(table.framework),
+    userIdIdx: index("idx_integration_userId").on(table.userId),
+    frameworkIdx: index("idx_integration_framework").on(table.framework),
   })
 );
 
-export type IntegrationModule = typeof integrationModules.$inferSelect;
-export type InsertIntegrationModule = typeof integrationModules.$inferInsert;
+export type Integration = typeof integrations.$inferSelect;
+export type InsertIntegration = typeof integrations.$inferInsert;
 
 /**
- * LLM Provider Configuration - Settings for different LLM models
+ * LLM providers - language model configurations
  */
 export const llmProviders = mysqlTable(
-  "swarm_llm_providers",
+  "llm_providers",
   {
-    id: varchar("id", { length: 36 }).primaryKey(), // UUID
-    name: varchar("name", { length: 255 }).notNull(),
+    id: varchar("id", { length: 64 }).primaryKey(),
+    userId: int("userId").notNull(),
+    name: varchar("name", { length: 128 }).notNull(),
     provider: mysqlEnum("provider", ["openai", "anthropic", "ollama", "custom"]).notNull(),
-    modelId: varchar("modelId", { length: 255 }).notNull(),
-    apiEndpoint: varchar("apiEndpoint", { length: 512 }),
-    configuration: json("configuration").$type<Record<string, unknown>>(),
-    isDefault: boolean("isDefault").default(false),
-    isActive: boolean("isActive").default(true),
+    model: varchar("model", { length: 128 }).notNull(),
+    apiKey: varchar("apiKey", { length: 512 }),
+    baseUrl: varchar("baseUrl", { length: 512 }),
+    active: boolean("active").default(true).notNull(),
+    isDefault: boolean("isDefault").default(false).notNull(),
+    configuration: json("configuration").notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   },
   (table) => ({
-    providerIdx: index("swarm_llm_provider_idx").on(table.provider),
-    modelIdx: index("swarm_llm_model_idx").on(table.modelId),
+    userIdIdx: index("idx_llm_userId").on(table.userId),
+    providerIdx: index("idx_llm_provider").on(table.provider),
+    activeIdx: index("idx_llm_active").on(table.active),
   })
 );
 
 export type LLMProvider = typeof llmProviders.$inferSelect;
 export type InsertLLMProvider = typeof llmProviders.$inferInsert;
+
+/**
+ * Workflow templates - pre-configured swarm architectures
+ */
+export const workflowTemplates = mysqlTable(
+  "workflow_templates",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    userId: int("userId").notNull(),
+    name: varchar("name", { length: 255 }).notNull(),
+    description: text("description"),
+    category: varchar("category", { length: 128 }),
+    orchestrationPattern: mysqlEnum("orchestrationPattern", [
+      "hierarchical",
+      "sequential",
+      "concurrent",
+      "round_robin",
+      "mesh",
+    ]).notNull(),
+    templateData: json("templateData").notNull(),
+    isPublic: boolean("isPublic").default(false).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    userIdIdx: index("idx_template_userId").on(table.userId),
+    categoryIdx: index("idx_template_category").on(table.category),
+  })
+);
+
+export type WorkflowTemplate = typeof workflowTemplates.$inferSelect;
+export type InsertWorkflowTemplate = typeof workflowTemplates.$inferInsert;
+
+/**
+ * Execution history - archived results and conversation logs
+ */
+export const executionHistory = mysqlTable(
+  "execution_history",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    userId: int("userId").notNull(),
+    taskId: varchar("taskId", { length: 64 }).notNull(),
+    workflowId: varchar("workflowId", { length: 64 }).notNull(),
+    input: json("input").notNull(),
+    output: json("output").notNull(),
+    conversationLog: json("conversationLog").notNull(),
+    metrics: json("metrics").notNull(),
+    executionTime: int("executionTime").notNull(),
+    status: mysqlEnum("status", ["completed", "failed", "timeout"]).notNull(),
+    storageUrl: varchar("storageUrl", { length: 512 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdIdx: index("idx_history_userId").on(table.userId),
+    taskIdIdx: index("idx_history_taskId").on(table.taskId),
+    workflowIdIdx: index("idx_history_workflowId").on(table.workflowId),
+  })
+);
+
+export type ExecutionHistory = typeof executionHistory.$inferSelect;
+export type InsertExecutionHistory = typeof executionHistory.$inferInsert;
+
+/**
+ * Consensus results - aggregated results from multiple agents
+ */
+export const consensusResults = mysqlTable(
+  "consensus_results",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    userId: int("userId").notNull(),
+    taskId: varchar("taskId", { length: 64 }).notNull(),
+    consensusType: mysqlEnum("consensusType", ["voting", "judge_based", "mixture_of_agents"]).notNull(),
+    agentResults: json("agentResults").notNull(),
+    finalResult: json("finalResult").notNull(),
+    confidence: decimal("confidence", { precision: 5, scale: 4 }).default("0.0000").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdIdx: index("idx_consensus_userId").on(table.userId),
+    taskIdIdx: index("idx_consensus_taskId").on(table.taskId),
+  })
+);
+
+export type ConsensusResult = typeof consensusResults.$inferSelect;
+export type InsertConsensusResult = typeof consensusResults.$inferInsert;
+
+/**
+ * Agent configurations - per-agent parameter overrides
+ */
+export const agentConfigurations = mysqlTable(
+  "agent_configurations",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    userId: int("userId").notNull(),
+    agentId: varchar("agentId", { length: 64 }).notNull(),
+    workflowId: varchar("workflowId", { length: 64 }),
+    parameters: json("parameters").notNull(),
+    llmModel: varchar("llmModel", { length: 128 }),
+    systemPrompt: text("systemPrompt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    userIdIdx: index("idx_config_userId").on(table.userId),
+    agentIdIdx: index("idx_config_agentId").on(table.agentId),
+    workflowIdIdx: index("idx_config_workflowId").on(table.workflowId),
+  })
+);
+
+export type AgentConfiguration = typeof agentConfigurations.$inferSelect;
+export type InsertAgentConfiguration = typeof agentConfigurations.$inferInsert;

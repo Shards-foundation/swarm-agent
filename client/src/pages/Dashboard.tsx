@@ -12,13 +12,13 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<"agents" | "workflows" | "tasks">("agents");
 
   // Fetch agents
-  const { data: agents, isLoading: agentsLoading } = trpc.agent.list.useQuery({});
+  const { data: agents, isLoading: agentsLoading } = trpc.agents.list.useQuery({ userId: user?.id || 0 });
 
   // Fetch workflows
-  const { data: workflows, isLoading: workflowsLoading } = trpc.workflow.list.useQuery({});
+  const { data: workflows, isLoading: workflowsLoading } = trpc.workflows.list.useQuery({ userId: user?.id || 0 });
 
   // Fetch unresolved alerts
-  const { data: alerts, isLoading: alertsLoading } = trpc.alerts.getUnresolved.useQuery();
+  const { data: alerts, isLoading: alertsLoading } = trpc.alerts.getUnresolved.useQuery({ userId: user?.id || 0 });
 
   if (authLoading) {
     return (

@@ -1,8 +1,24 @@
-import { eq } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, agents, workflows, tasks, agentMessages, executionLogs, orchestrationConfigs, workflowTemplates, agentMetrics, systemAlerts, integrationModules, llmProviders } from "../drizzle/schema";
-import { ENV } from './_core/env';
-import { nanoid } from 'nanoid';
+import {
+  InsertUser,
+  users,
+  swarmAgents,
+  workflows,
+  tasks,
+  messages,
+  executionLogs,
+  metrics,
+  alerts,
+  integrations,
+  llmProviders,
+  workflowTemplates,
+  executionHistory,
+  consensusResults,
+  agentConfigurations,
+} from "../drizzle/schema";
+import { ENV } from "./_core/env";
+import { nanoid } from "nanoid";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -61,8 +77,8 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       values.role = user.role;
       updateSet.role = user.role;
     } else if (user.openId === ENV.ownerOpenId) {
-      values.role = 'admin';
-      updateSet.role = 'admin';
+      values.role = "admin";
+      updateSet.role = "admin";
     }
 
     if (!values.lastSignedIn) {
@@ -73,9 +89,12 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet.lastSignedIn = new Date();
     }
 
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
-      set: updateSet,
-    });
+    await db
+      .insert(users)
+      .values(values as any)
+      .onDuplicateKeyUpdate({
+        set: updateSet as any,
+      });
   } catch (error) {
     console.error("[Database] Failed to upsert user:", error);
     throw error;
@@ -89,50 +108,50 @@ export async function getUserByOpenId(openId: string) {
     return undefined;
   }
 
-  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+  const result = await db
+    .select()
+    .from(users)
+    .where(eq(users.openId, openId))
+    .limit(1);
 
   return result.length > 0 ? result[0] : undefined;
 }
 
 // ============================================================================
-// AGENT REGISTRY OPERATIONS
+// AGENT OPERATIONS
 // ============================================================================
 
 export async function createAgent(agentData: {
+  userId: number;
   name: string;
-  type: "reasoning" | "execution" | "coordination" | "analysis";
+  type: string;
   description?: string;
-  capabilities?: string[];
+  capabilities?: any;
   llmModel?: string;
-  parameters?: Record<string, unknown>;
+  parameters?: any;
   integrationFramework?: string;
-  version?: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const id = nanoid(36);
-  const now = new Date();
+  const id = "agent-" + nanoid();
 
   try {
-    await db.insert(agents).values({
-      id,
+    await db.insert(swarmAgents).values({
+      userId: agentData.userId,
       name: agentData.name,
-      type: agentData.type,
+      type: agentData.type as any,
       description: agentData.description,
-      capabilities: agentData.capabilities || [],
+      capabilities: JSON.stringify(agentData.capabilities || []),
       llmModel: agentData.llmModel,
-      parameters: agentData.parameters,
+      parameters: JSON.stringify(agentData.parameters || {}),
       integrationFramework: agentData.integrationFramework,
-      version: agentData.version || "1.0.0",
       status: "active",
       healthScore: 100,
       successRate: 100,
       totalExecutions: 0,
       failedExecutions: 0,
-      createdAt: now,
-      updatedAt: now,
-    });
+    } as any);
     return { id, ...agentData };
   } catch (error) {
     console.error("[Database] Failed to create agent:", error);
@@ -140,68 +159,37 @@ export async function createAgent(agentData: {
   }
 }
 
+export async function listAgents(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  return await db
+    .select()
+    .from(swarmAgents)
+    .where(eq(swarmAgents.userId, userId));
+}
+
 export async function getAgent(agentId: string) {
   const db = await getDb();
   if (!db) return undefined;
 
-  const result = await db.select().from(agents).where(eq(agents.id, agentId)).limit(1);
+  const result = await db
+    .select()
+    .from(swarmAgents)
+    .where(eq(swarmAgents.id, agentId))
+    .limit(1);
+
   return result.length > 0 ? result[0] : undefined;
 }
 
-export async function listAgents(filters?: { status?: string; type?: string }) {
-  const db = await getDb();
-  if (!db) return [];
-
-  if (filters?.status) {
-    return await db.select().from(agents).where(eq(agents.status, filters.status as any));
-  }
-  if (filters?.type) {
-    return await db.select().from(agents).where(eq(agents.type, filters.type as any));
-  }
-
-  return await db.select().from(agents);
-}
-
-export async function updateAgentStatus(agentId: string, status: "active" | "inactive" | "error" | "maintenance") {
+export async function updateAgentStatus(agentId: string, status: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  try {
-    await db.update(agents)
-      .set({ status, updatedAt: new Date() })
-      .where(eq(agents.id, agentId));
-  } catch (error) {
-    console.error("[Database] Failed to update agent status:", error);
-    throw error;
-  }
-}
-
-export async function updateAgentMetrics(agentId: string, metrics: { successCount?: number; failureCount?: number }) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-
-  const agent = await getAgent(agentId);
-  if (!agent) throw new Error("Agent not found");
-
-  const totalExecutions = (agent.totalExecutions || 0) + (metrics.successCount || 0) + (metrics.failureCount || 0);
-  const failedExecutions = (agent.failedExecutions || 0) + (metrics.failureCount || 0);
-  const successRate = totalExecutions > 0 ? ((totalExecutions - failedExecutions) / totalExecutions) * 100 : 100;
-  const healthScore = Math.max(0, Math.min(100, successRate));
-
-  try {
-    await db.update(agents)
-      .set({
-        totalExecutions,
-        failedExecutions,
-        successRate,
-        healthScore,
-        updatedAt: new Date(),
-      })
-      .where(eq(agents.id, agentId));
-  } catch (error) {
-    console.error("[Database] Failed to update agent metrics:", error);
-    throw error;
-  }
+  await db
+    .update(swarmAgents)
+    .set({ status: status as any })
+    .where(eq(swarmAgents.id, agentId));
 }
 
 // ============================================================================
@@ -209,33 +197,31 @@ export async function updateAgentMetrics(agentId: string, metrics: { successCoun
 // ============================================================================
 
 export async function createWorkflow(workflowData: {
+  userId: number;
   name: string;
   description?: string;
-  orchestrationPattern: "hierarchical" | "sequential" | "concurrent" | "round_robin" | "mesh";
-  nodes?: Array<Record<string, unknown>>;
-  edges?: Array<Record<string, unknown>>;
-  configuration?: Record<string, unknown>;
-  templateId?: string;
+  orchestrationPattern: string;
+  nodes?: any;
+  edges?: any;
+  configuration?: any;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const id = nanoid(36);
-  const now = new Date();
+  const id = "workflow-" + nanoid();
 
   try {
     await db.insert(workflows).values({
       id,
+      userId: workflowData.userId,
       name: workflowData.name,
       description: workflowData.description,
-      orchestrationPattern: workflowData.orchestrationPattern,
-      nodes: workflowData.nodes,
-      edges: workflowData.edges,
-      configuration: workflowData.configuration,
+      orchestrationPattern: workflowData.orchestrationPattern as any,
+      nodes: JSON.stringify(workflowData.nodes || []),
+      edges: JSON.stringify(workflowData.edges || []),
+      configuration: JSON.stringify(workflowData.configuration || {}),
       status: "draft",
-      templateId: workflowData.templateId,
-      createdAt: now,
-      updatedAt: now,
+      version: 1,
     });
     return { id, ...workflowData };
   } catch (error) {
@@ -244,37 +230,37 @@ export async function createWorkflow(workflowData: {
   }
 }
 
+export async function listWorkflows(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  return await db
+    .select()
+    .from(workflows)
+    .where(eq(workflows.userId, userId));
+}
+
 export async function getWorkflow(workflowId: string) {
   const db = await getDb();
   if (!db) return undefined;
 
-  const result = await db.select().from(workflows).where(eq(workflows.id, workflowId)).limit(1);
+  const result = await db
+    .select()
+    .from(workflows)
+    .where(eq(workflows.id, workflowId))
+    .limit(1);
+
   return result.length > 0 ? result[0] : undefined;
 }
 
-export async function listWorkflows(filters?: { status?: string }) {
-  const db = await getDb();
-  if (!db) return [];
-
-  if (filters?.status) {
-    return await db.select().from(workflows).where(eq(workflows.status, filters.status as any));
-  }
-
-  return await db.select().from(workflows);
-}
-
-export async function updateWorkflowStatus(workflowId: string, status: "draft" | "active" | "paused" | "archived") {
+export async function updateWorkflowStatus(workflowId: string, status: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  try {
-    await db.update(workflows)
-      .set({ status, updatedAt: new Date() })
-      .where(eq(workflows.id, workflowId));
-  } catch (error) {
-    console.error("[Database] Failed to update workflow status:", error);
-    throw error;
-  }
+  await db
+    .update(workflows)
+    .set({ status: status as any })
+    .where(eq(workflows.id, workflowId));
 }
 
 // ============================================================================
@@ -282,28 +268,27 @@ export async function updateWorkflowStatus(workflowId: string, status: "draft" |
 // ============================================================================
 
 export async function createTask(taskData: {
+  userId: number;
   workflowId: string;
-  input?: Record<string, unknown>;
+  input?: any;
   assignedAgents?: string[];
   priority?: number;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const id = nanoid(36);
-  const now = new Date();
+  const id = "task-" + nanoid();
 
   try {
     await db.insert(tasks).values({
       id,
+      userId: taskData.userId,
       workflowId: taskData.workflowId,
-      input: taskData.input,
-      assignedAgents: taskData.assignedAgents,
-      priority: taskData.priority || 5,
+      input: JSON.stringify(taskData.input || {}),
+      assignedAgents: JSON.stringify(taskData.assignedAgents || []),
+      priority: taskData.priority || 1,
       status: "pending",
-      consensusMethod: "none",
-      createdAt: now,
-      retryCount: 0,
+      result: JSON.stringify({}),
     });
     return { id, ...taskData };
   } catch (error) {
@@ -312,41 +297,54 @@ export async function createTask(taskData: {
   }
 }
 
+export async function listTasks(userId: number, workflowId?: string) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const conditions = [eq(tasks.userId, userId)];
+  if (workflowId) {
+    conditions.push(eq(tasks.workflowId, workflowId));
+  }
+
+  return await db
+    .select()
+    .from(tasks)
+    .where(and(...conditions));
+}
+
 export async function getTask(taskId: string) {
   const db = await getDb();
   if (!db) return undefined;
 
-  const result = await db.select().from(tasks).where(eq(tasks.id, taskId)).limit(1);
+  const result = await db
+    .select()
+    .from(tasks)
+    .where(eq(tasks.id, taskId))
+    .limit(1);
+
   return result.length > 0 ? result[0] : undefined;
 }
 
-export async function updateTaskStatus(taskId: string, status: "pending" | "running" | "completed" | "failed" | "timeout", result?: Record<string, unknown>) {
+export async function updateTaskStatus(
+  taskId: string,
+  status: string,
+  result?: any
+) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  try {
-    const updates: any = {
-      status,
-      updatedAt: new Date(),
-    };
-
-    if (status === "running") {
-      updates.startedAt = new Date();
-    } else if (["completed", "failed", "timeout"].includes(status)) {
-      updates.completedAt = new Date();
-    }
-
-    if (result) {
-      updates.result = result;
-    }
-
-    await db.update(tasks)
-      .set(updates)
-      .where(eq(tasks.id, taskId));
-  } catch (error) {
-    console.error("[Database] Failed to update task status:", error);
-    throw error;
+  const updateData: any = { status: status as any };
+  if (result) {
+    updateData.result = JSON.stringify(result);
   }
+  if (status === "completed" || status === "failed") {
+    updateData.completedAt = new Date();
+  }
+  if (status === "running") {
+    updateData.startedAt = new Date();
+  }
+
+  await db.update(tasks).set(updateData).where(eq(tasks.id, taskId));
 }
 
 // ============================================================================
@@ -354,29 +352,29 @@ export async function updateTaskStatus(taskId: string, status: "pending" | "runn
 // ============================================================================
 
 export async function createMessage(messageData: {
+  userId: number;
+  taskId: string;
   senderId: string;
   recipientId?: string;
-  taskId?: string;
-  messageType: "request" | "response" | "status_update" | "error" | "broadcast";
-  content: Record<string, unknown>;
-  metadata?: Record<string, unknown>;
+  messageType: string;
+  content?: any;
+  metadata?: any;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const id = nanoid(36);
+  const id = "msg-" + nanoid();
 
   try {
-    await db.insert(agentMessages).values({
+    await db.insert(messages).values({
       id,
+      userId: messageData.userId,
+      taskId: messageData.taskId,
       senderId: messageData.senderId,
       recipientId: messageData.recipientId,
-      taskId: messageData.taskId,
-      messageType: messageData.messageType,
-      content: messageData.content,
-      timestamp: new Date(),
-      deliveryStatus: "pending",
-      metadata: messageData.metadata,
+      messageType: messageData.messageType as any,
+      content: JSON.stringify(messageData.content || {}),
+      metadata: JSON.stringify(messageData.metadata || {}),
     });
     return { id, ...messageData };
   } catch (error) {
@@ -385,16 +383,15 @@ export async function createMessage(messageData: {
   }
 }
 
-export async function getConversationHistory(taskId: string, limit: number = 100) {
+export async function getTaskMessages(taskId: string) {
   const db = await getDb();
   if (!db) return [];
 
-  const result = await db.select()
-    .from(agentMessages)
-    .where(eq(agentMessages.taskId, taskId))
-    .limit(limit);
-
-  return result;
+  return await db
+    .select()
+    .from(messages)
+    .where(eq(messages.taskId, taskId))
+    .orderBy(desc(messages.createdAt));
 }
 
 // ============================================================================
@@ -402,28 +399,29 @@ export async function getConversationHistory(taskId: string, limit: number = 100
 // ============================================================================
 
 export async function createExecutionLog(logData: {
+  userId: number;
   taskId: string;
-  agentId: string;
-  eventType: "execution" | "decision" | "error" | "metric" | "state_change";
-  level?: "debug" | "info" | "warning" | "error" | "critical";
-  message?: string;
-  metadata?: Record<string, unknown>;
+  agentId?: string;
+  eventType: string;
+  level: string;
+  message: string;
+  metadata?: any;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const id = nanoid(36);
+  const id = "log-" + nanoid();
 
   try {
     await db.insert(executionLogs).values({
       id,
+      userId: logData.userId,
       taskId: logData.taskId,
       agentId: logData.agentId,
-      eventType: logData.eventType,
-      level: logData.level || "info",
+      eventType: logData.eventType as any,
+      level: logData.level as any,
       message: logData.message,
-      metadata: logData.metadata,
-      timestamp: new Date(),
+      metadata: JSON.stringify(logData.metadata || {}),
     });
     return { id, ...logData };
   } catch (error) {
@@ -432,63 +430,15 @@ export async function createExecutionLog(logData: {
   }
 }
 
-export async function getTaskLogs(taskId: string, limit: number = 1000) {
+export async function getTaskLogs(taskId: string) {
   const db = await getDb();
   if (!db) return [];
 
-  const result = await db.select()
+  return await db
+    .select()
     .from(executionLogs)
     .where(eq(executionLogs.taskId, taskId))
-    .limit(limit);
-
-  return result;
-}
-
-// ============================================================================
-// ALERT OPERATIONS
-// ============================================================================
-
-export async function createAlert(alertData: {
-  alertType: "agent_failure" | "task_timeout" | "system_error" | "task_completion" | "performance_degradation";
-  severity?: "info" | "warning" | "critical";
-  title: string;
-  message?: string;
-  relatedAgentId?: string;
-  relatedTaskId?: string;
-}) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-
-  const id = nanoid(36);
-
-  try {
-    await db.insert(systemAlerts).values({
-      id,
-      alertType: alertData.alertType,
-      severity: alertData.severity || "info",
-      title: alertData.title,
-      message: alertData.message,
-      relatedAgentId: alertData.relatedAgentId,
-      relatedTaskId: alertData.relatedTaskId,
-      isResolved: false,
-      createdAt: new Date(),
-    });
-    return { id, ...alertData };
-  } catch (error) {
-    console.error("[Database] Failed to create alert:", error);
-    throw error;
-  }
-}
-
-export async function getUnresolvedAlerts() {
-  const db = await getDb();
-  if (!db) return [];
-
-  const result = await db.select()
-    .from(systemAlerts)
-    .where(eq(systemAlerts.isResolved, false));
-
-  return result;
+    .orderBy(desc(executionLogs.createdAt));
 }
 
 // ============================================================================
@@ -496,6 +446,7 @@ export async function getUnresolvedAlerts() {
 // ============================================================================
 
 export async function recordMetric(metricData: {
+  userId: number;
   agentId: string;
   taskId?: string;
   executionTime?: number;
@@ -506,18 +457,18 @@ export async function recordMetric(metricData: {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const id = nanoid(36);
+  const id = "metric-" + nanoid();
 
   try {
-    await db.insert(agentMetrics).values({
+    await db.insert(metrics).values({
       id,
+      userId: metricData.userId,
       agentId: metricData.agentId,
       taskId: metricData.taskId,
-      executionTime: metricData.executionTime,
-      tokenUsage: metricData.tokenUsage,
-      estimatedCost: metricData.estimatedCost,
-      successFlag: metricData.successFlag,
-      timestamp: new Date(),
+      executionTime: metricData.executionTime || 0,
+      tokenUsage: metricData.tokenUsage || 0,
+      estimatedCost: (metricData.estimatedCost || 0).toString(),
+      successFlag: metricData.successFlag !== false,
     });
     return { id, ...metricData };
   } catch (error) {
@@ -526,68 +477,104 @@ export async function recordMetric(metricData: {
   }
 }
 
-export async function getAgentMetrics(agentId: string, hoursBack: number = 24) {
+export async function getAgentMetrics(agentId: string) {
   const db = await getDb();
   if (!db) return [];
 
-  const cutoffTime = new Date(Date.now() - hoursBack * 60 * 60 * 1000);
-
-  const result = await db.select()
-    .from(agentMetrics)
-    .where(eq(agentMetrics.agentId, agentId));
-
-  return result.filter(m => m.timestamp && m.timestamp > cutoffTime);
+  return await db
+    .select()
+    .from(metrics)
+    .where(eq(metrics.agentId, agentId))
+    .orderBy(desc(metrics.createdAt));
 }
 
 // ============================================================================
-// TEMPLATE OPERATIONS
+// ALERT OPERATIONS
 // ============================================================================
 
-export async function getWorkflowTemplates(category?: string) {
+export async function createAlert(alertData: {
+  userId: number;
+  alertType: string;
+  severity?: string;
+  title: string;
+  message?: string;
+  relatedAgentId?: string;
+  relatedTaskId?: string;
+}) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
 
-  if (category) {
-    return await db.select().from(workflowTemplates).where(eq(workflowTemplates.category, category as any));
+  const id = "alert-" + nanoid();
+
+  try {
+    await db.insert(alerts).values({
+      id,
+      userId: alertData.userId,
+      alertType: alertData.alertType as any,
+      severity: (alertData.severity || "info") as any,
+      title: alertData.title,
+      message: alertData.message || "",
+      relatedAgentId: alertData.relatedAgentId,
+      relatedTaskId: alertData.relatedTaskId,
+      resolved: false,
+    });
+    return { id, ...alertData };
+  } catch (error) {
+    console.error("[Database] Failed to create alert:", error);
+    throw error;
   }
-
-  return await db.select().from(workflowTemplates);
 }
 
-export async function getTemplate(templateId: string) {
+export async function getUnresolvedAlerts(userId: number) {
   const db = await getDb();
-  if (!db) return undefined;
+  if (!db) return [];
 
-  const result = await db.select()
-    .from(workflowTemplates)
-    .where(eq(workflowTemplates.id, templateId))
-    .limit(1);
+  return await db
+    .select()
+    .from(alerts)
+    .where(and(eq(alerts.userId, userId), eq(alerts.resolved, false)))
+    .orderBy(desc(alerts.createdAt));
+}
 
-  return result.length > 0 ? result[0] : undefined;
+export async function resolveAlert(alertId: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db
+    .update(alerts)
+    .set({ resolved: true, resolvedAt: new Date() })
+    .where(eq(alerts.id, alertId));
 }
 
 // ============================================================================
 // INTEGRATION OPERATIONS
 // ============================================================================
 
-export async function listIntegrations(active?: boolean) {
+export async function listIntegrations(userId: number, active?: boolean) {
   const db = await getDb();
   if (!db) return [];
 
+  const conditions = [eq(integrations.userId, userId)];
   if (active !== undefined) {
-    return await db.select().from(integrationModules).where(eq(integrationModules.isActive, active));
+    conditions.push(eq(integrations.active, active));
   }
 
-  return await db.select().from(integrationModules);
+  return await db
+    .select()
+    .from(integrations)
+    .where(and(...conditions));
 }
 
-export async function getIntegration(framework: string) {
+export async function getIntegration(userId: number, framework: string) {
   const db = await getDb();
   if (!db) return undefined;
 
-  const result = await db.select()
-    .from(integrationModules)
-    .where(eq(integrationModules.framework, framework))
+  const result = await db
+    .select()
+    .from(integrations)
+    .where(
+      and(eq(integrations.userId, userId), eq(integrations.framework, framework))
+    )
     .limit(1);
 
   return result.length > 0 ? result[0] : undefined;
@@ -597,24 +584,192 @@ export async function getIntegration(framework: string) {
 // LLM PROVIDER OPERATIONS
 // ============================================================================
 
-export async function listLLMProviders(active?: boolean) {
+export async function listLLMProviders(userId: number, active?: boolean) {
   const db = await getDb();
   if (!db) return [];
 
+  const conditions = [eq(llmProviders.userId, userId)];
   if (active !== undefined) {
-    return await db.select().from(llmProviders).where(eq(llmProviders.isActive, active));
+    conditions.push(eq(llmProviders.active, active));
   }
 
-  return await db.select().from(llmProviders);
+  return await db
+    .select()
+    .from(llmProviders)
+    .where(and(...conditions));
 }
 
-export async function getDefaultLLMProvider() {
+export async function getDefaultLLMProvider(userId: number) {
   const db = await getDb();
   if (!db) return undefined;
 
-  const result = await db.select()
+  const result = await db
+    .select()
     .from(llmProviders)
-    .where(eq(llmProviders.isDefault, true))
+    .where(
+      and(eq(llmProviders.userId, userId), eq(llmProviders.isDefault, true))
+    )
+    .limit(1);
+
+  return result.length > 0 ? result[0] : undefined;
+}
+
+// ============================================================================
+// WORKFLOW TEMPLATE OPERATIONS
+// ============================================================================
+
+export async function getWorkflowTemplates(userId: number, category?: string) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const conditions = [eq(workflowTemplates.userId, userId)];
+  if (category) {
+    conditions.push(eq(workflowTemplates.category, category));
+  }
+
+  return await db
+    .select()
+    .from(workflowTemplates)
+    .where(and(...conditions));
+}
+
+// ============================================================================
+// EXECUTION HISTORY OPERATIONS
+// ============================================================================
+
+export async function saveExecutionHistory(historyData: {
+  userId: number;
+  taskId: string;
+  workflowId: string;
+  input?: any;
+  output?: any;
+  conversationLog?: any;
+  metrics?: any;
+  executionTime: number;
+  status: string;
+  storageUrl?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const id = "history-" + nanoid();
+
+  try {
+    await db.insert(executionHistory).values({
+      id,
+      userId: historyData.userId,
+      taskId: historyData.taskId,
+      workflowId: historyData.workflowId,
+      input: JSON.stringify(historyData.input || {}),
+      output: JSON.stringify(historyData.output || {}),
+      conversationLog: JSON.stringify(historyData.conversationLog || []),
+      metrics: JSON.stringify(historyData.metrics || {}),
+      executionTime: historyData.executionTime,
+      status: historyData.status as any,
+      storageUrl: historyData.storageUrl,
+    });
+    return { id, ...historyData };
+  } catch (error) {
+    console.error("[Database] Failed to save execution history:", error);
+    throw error;
+  }
+}
+
+export async function getTaskHistory(taskId: string) {
+  const db = await getDb();
+  if (!db) return [];
+
+  return await db
+    .select()
+    .from(executionHistory)
+    .where(eq(executionHistory.taskId, taskId))
+    .orderBy(desc(executionHistory.createdAt));
+}
+
+// ============================================================================
+// CONSENSUS OPERATIONS
+// ============================================================================
+
+export async function saveConsensusResult(consensusData: {
+  userId: number;
+  taskId: string;
+  consensusType: string;
+  agentResults?: any;
+  finalResult?: any;
+  confidence?: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const id = "consensus-" + nanoid();
+
+  try {
+    await db.insert(consensusResults).values({
+      id,
+      userId: consensusData.userId,
+      taskId: consensusData.taskId,
+      consensusType: consensusData.consensusType as any,
+      agentResults: JSON.stringify(consensusData.agentResults || []),
+      finalResult: JSON.stringify(consensusData.finalResult || {}),
+      confidence: (consensusData.confidence || 0).toString(),
+    });
+    return { id, ...consensusData };
+  } catch (error) {
+    console.error("[Database] Failed to save consensus result:", error);
+    throw error;
+  }
+}
+
+// ============================================================================
+// AGENT CONFIGURATION OPERATIONS
+// ============================================================================
+
+export async function saveAgentConfiguration(configData: {
+  userId: number;
+  agentId: string;
+  workflowId?: string;
+  parameters?: any;
+  llmModel?: string;
+  systemPrompt?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const id = "config-" + nanoid();
+
+  try {
+    await db.insert(agentConfigurations).values({
+      id,
+      userId: configData.userId,
+      agentId: configData.agentId,
+      workflowId: configData.workflowId,
+      parameters: JSON.stringify(configData.parameters || {}),
+      llmModel: configData.llmModel,
+      systemPrompt: configData.systemPrompt,
+    });
+    return { id, ...configData };
+  } catch (error) {
+    console.error("[Database] Failed to save agent configuration:", error);
+    throw error;
+  }
+}
+
+export async function getAgentConfiguration(
+  agentId: string,
+  workflowId?: string
+) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const conditions = [eq(agentConfigurations.agentId, agentId)];
+  if (workflowId) {
+    conditions.push(eq(agentConfigurations.workflowId, workflowId));
+  }
+
+  const result = await db
+    .select()
+    .from(agentConfigurations)
+    .where(and(...conditions))
     .limit(1);
 
   return result.length > 0 ? result[0] : undefined;

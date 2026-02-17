@@ -1,29 +1,17 @@
+import { z } from "zod";
+import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import * as db from "./db";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
-import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router, protectedProcedure } from "./_core/trpc";
-import { z } from "zod";
-import * as db from "./db";
-
-const anyObject = z.object({}).passthrough();
 
 /**
- * Agent Management Router
+ * Agent Router
  */
 const agentRouter = router({
-  create: protectedProcedure
-    .input(z.object({
-      name: z.string().min(1),
-      type: z.enum(["reasoning", "execution", "coordination", "analysis"]),
-      description: z.string().optional(),
-      capabilities: z.array(z.string()).optional(),
-      llmModel: z.string().optional(),
-      parameters: anyObject.optional(),
-      integrationFramework: z.string().optional(),
-      version: z.string().optional(),
-    }))
-    .mutation(async ({ input }) => {
-      return await db.createAgent(input);
+  list: publicProcedure
+    .input(z.object({ userId: z.number() }))
+    .query(async ({ input }) => {
+      return await db.listAgents(input.userId);
     }),
 
   get: publicProcedure
@@ -32,56 +20,41 @@ const agentRouter = router({
       return await db.getAgent(input.agentId);
     }),
 
-  list: publicProcedure
-    .input(z.object({
-      status: z.string().optional(),
-      type: z.string().optional(),
-    }).optional())
-    .query(async ({ input }) => {
-      return await db.listAgents(input);
+  create: protectedProcedure
+    .input(
+      z.object({
+        name: z.string(),
+        type: z.enum(["reasoning", "execution", "analysis", "coordination"]),
+        description: z.string().optional(),
+        capabilities: z.array(z.string()).optional(),
+        llmModel: z.string().optional(),
+        parameters: z.record(z.string(), z.any()).optional(),
+        integrationFramework: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      return await db.createAgent({
+        userId: ctx.user!.id,
+        ...input,
+      });
     }),
 
   updateStatus: protectedProcedure
-    .input(z.object({
-      agentId: z.string(),
-      status: z.enum(["active", "inactive", "error", "maintenance"]),
-    }))
+    .input(z.object({ agentId: z.string(), status: z.string() }))
     .mutation(async ({ input }) => {
       await db.updateAgentStatus(input.agentId, input.status);
-      return { success: true };
-    }),
-
-  updateMetrics: protectedProcedure
-    .input(z.object({
-      agentId: z.string(),
-      successCount: z.number().optional(),
-      failureCount: z.number().optional(),
-    }))
-    .mutation(async ({ input }) => {
-      await db.updateAgentMetrics(input.agentId, {
-        successCount: input.successCount,
-        failureCount: input.failureCount,
-      });
       return { success: true };
     }),
 });
 
 /**
- * Workflow Management Router
+ * Workflow Router
  */
 const workflowRouter = router({
-  create: protectedProcedure
-    .input(z.object({
-      name: z.string().min(1),
-      description: z.string().optional(),
-      orchestrationPattern: z.enum(["hierarchical", "sequential", "concurrent", "round_robin", "mesh"]),
-      nodes: z.array(anyObject).optional(),
-      edges: z.array(anyObject).optional(),
-      configuration: anyObject.optional(),
-      templateId: z.string().optional(),
-    }))
-    .mutation(async ({ input }) => {
-      return await db.createWorkflow(input);
+  list: publicProcedure
+    .input(z.object({ userId: z.number() }))
+    .query(async ({ input }) => {
+      return await db.listWorkflows(input.userId);
     }),
 
   get: publicProcedure
@@ -90,42 +63,51 @@ const workflowRouter = router({
       return await db.getWorkflow(input.workflowId);
     }),
 
-  list: publicProcedure
-    .input(z.object({ status: z.string().optional() }).optional())
-    .query(async ({ input }) => {
-      return await db.listWorkflows(input || {});
+  create: protectedProcedure
+    .input(
+      z.object({
+        name: z.string(),
+        orchestrationPattern: z.enum([
+          "sequential",
+          "concurrent",
+          "hierarchical",
+          "round-robin",
+          "custom",
+        ]),
+        description: z.string().optional(),
+        nodes: z.array(z.record(z.string(), z.any())).optional(),
+        edges: z.array(z.record(z.string(), z.any())).optional(),
+        configuration: z.record(z.string(), z.any()).optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      return await db.createWorkflow({
+        userId: ctx.user!.id,
+        ...input,
+      });
     }),
 
   updateStatus: protectedProcedure
-    .input(z.object({
-      workflowId: z.string(),
-      status: z.enum(["draft", "active", "paused", "archived"]),
-    }))
+    .input(z.object({ workflowId: z.string(), status: z.string() }))
     .mutation(async ({ input }) => {
       await db.updateWorkflowStatus(input.workflowId, input.status);
       return { success: true };
     }),
-
-  getTemplates: publicProcedure
-    .input(z.object({ category: z.string().optional() }).optional())
-    .query(async ({ input }) => {
-      return await db.getWorkflowTemplates(input?.category || undefined);
-    }),
 });
 
 /**
- * Task Execution Router
+ * Task Router
  */
 const taskRouter = router({
-  create: protectedProcedure
-    .input(z.object({
-      workflowId: z.string(),
-      input: anyObject.optional(),
-      assignedAgents: z.array(z.string()).optional(),
-      priority: z.number().optional(),
-    }))
-    .mutation(async ({ input }) => {
-      return await db.createTask(input);
+  list: publicProcedure
+    .input(
+      z.object({
+        userId: z.number(),
+        workflowId: z.string().optional(),
+      })
+    )
+    .query(async ({ input }) => {
+      return await db.listTasks(input.userId, input.workflowId);
     }),
 
   get: publicProcedure
@@ -134,94 +116,139 @@ const taskRouter = router({
       return await db.getTask(input.taskId);
     }),
 
+  create: protectedProcedure
+    .input(
+      z.object({
+        workflowId: z.string(),
+        input: z.record(z.string(), z.any()).optional(),
+        assignedAgents: z.array(z.string()).optional(),
+        priority: z.number().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      return await db.createTask({
+        userId: ctx.user!.id,
+        ...input,
+      });
+    }),
+
   updateStatus: protectedProcedure
-    .input(z.object({
-      taskId: z.string(),
-      status: z.enum(["pending", "running", "completed", "failed", "timeout"]),
-      result: anyObject.optional(),
-    }))
+    .input(
+      z.object({
+        taskId: z.string(),
+        status: z.string(),
+        result: z.record(z.string(), z.any()).optional(),
+      })
+    )
     .mutation(async ({ input }) => {
-      await db.updateTaskStatus(input.taskId, input.status, input.result || undefined);
+      await db.updateTaskStatus(input.taskId, input.status, input.result);
       return { success: true };
     }),
+});
 
-  getLogs: publicProcedure
-    .input(z.object({ taskId: z.string(), limit: z.number().optional() }))
+/**
+ * Message Router
+ */
+const messageRouter = router({
+  list: publicProcedure
+    .input(z.object({ taskId: z.string() }))
     .query(async ({ input }) => {
-      return await db.getTaskLogs(input.taskId, input.limit || 1000);
+      return await db.getTaskMessages(input.taskId);
     }),
 
-  getConversation: publicProcedure
-    .input(z.object({ taskId: z.string(), limit: z.number().optional() }))
-    .query(async ({ input }) => {
-      return await db.getConversationHistory(input.taskId, input.limit || 100);
+  send: protectedProcedure
+    .input(
+      z.object({
+        taskId: z.string(),
+        recipientId: z.string().optional(),
+        messageType: z.enum([
+          "request",
+          "response",
+          "status",
+          "error",
+          "result",
+        ]),
+        content: z.record(z.string(), z.any()).optional(),
+        metadata: z.record(z.string(), z.any()).optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const agent = await db.listAgents(ctx.user!.id);
+      const senderId = agent.length > 0 ? agent[0]!.id : "system";
+
+      return await db.createMessage({
+        userId: ctx.user!.id,
+        taskId: input.taskId,
+        senderId,
+        recipientId: input.recipientId,
+        messageType: input.messageType,
+        content: input.content,
+        metadata: input.metadata,
+      });
     }),
 });
 
 /**
- * Communication Router
+ * Execution Log Router
  */
-const communicationRouter = router({
-  sendMessage: protectedProcedure
-    .input(z.object({
-      senderId: z.string(),
-      recipientId: z.string().optional(),
-      taskId: z.string().optional(),
-      messageType: z.enum(["request", "response", "status_update", "error", "broadcast"]),
-      content: anyObject,
-      metadata: anyObject.optional(),
-    }))
-    .mutation(async ({ input }) => {
-      return await db.createMessage(input);
+const logRouter = router({
+  list: publicProcedure
+    .input(z.object({ taskId: z.string() }))
+    .query(async ({ input }) => {
+      return await db.getTaskLogs(input.taskId);
     }),
 
-  getConversation: publicProcedure
-    .input(z.object({ taskId: z.string(), limit: z.number().optional() }))
-    .query(async ({ input }) => {
-      return await db.getConversationHistory(input.taskId, input.limit || 100);
+  create: protectedProcedure
+    .input(
+      z.object({
+        taskId: z.string(),
+        agentId: z.string().optional(),
+        eventType: z.enum([
+          "error",
+          "execution",
+          "decision",
+          "metric",
+          "state_change",
+        ]),
+        level: z.enum(["error", "debug", "info", "warning", "critical"]),
+        message: z.string(),
+        metadata: z.record(z.string(), z.any()).optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      return await db.createExecutionLog({
+        userId: ctx.user!.id,
+        ...input,
+      });
     }),
 });
 
 /**
- * Monitoring & Observability Router
+ * Metrics Router
  */
-const monitoringRouter = router({
-  recordMetric: protectedProcedure
-    .input(z.object({
-      agentId: z.string(),
-      taskId: z.string().optional(),
-      executionTime: z.number().optional(),
-      tokenUsage: z.number().optional(),
-      estimatedCost: z.number().optional(),
-      successFlag: z.boolean().optional(),
-    }))
-    .mutation(async ({ input }) => {
-      return await db.recordMetric(input);
+const metricsRouter = router({
+  record: protectedProcedure
+    .input(
+      z.object({
+        agentId: z.string(),
+        taskId: z.string().optional(),
+        executionTime: z.number().optional(),
+        tokenUsage: z.number().optional(),
+        estimatedCost: z.number().optional(),
+        successFlag: z.boolean().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      return await db.recordMetric({
+        userId: ctx.user!.id,
+        ...input,
+      });
     }),
 
   getAgentMetrics: publicProcedure
-    .input(z.object({ agentId: z.string(), hoursBack: z.number().optional() }))
+    .input(z.object({ agentId: z.string() }))
     .query(async ({ input }) => {
-      return await db.getAgentMetrics(input.agentId, input.hoursBack || 24);
-    }),
-
-  createLog: protectedProcedure
-    .input(z.object({
-      taskId: z.string(),
-      agentId: z.string(),
-      eventType: z.enum(["execution", "decision", "error", "metric", "state_change"]),
-      level: z.enum(["debug", "info", "warning", "error", "critical"]).optional(),
-      message: z.string().optional(),
-      metadata: anyObject.optional(),
-    }))
-    .mutation(async ({ input }) => {
-      return await db.createExecutionLog(input);
-    }),
-
-  getTaskLogs: publicProcedure
-    .input(z.object({ taskId: z.string(), limit: z.number().optional() }))
-    .query(async ({ input }) => {
-      return await db.getTaskLogs(input.taskId, input.limit || 1000);
+      return await db.getAgentMetrics(input.agentId);
     }),
 });
 
@@ -230,21 +257,40 @@ const monitoringRouter = router({
  */
 const alertsRouter = router({
   create: protectedProcedure
-    .input(z.object({
-      alertType: z.enum(["agent_failure", "task_timeout", "system_error", "task_completion", "performance_degradation"]),
-      severity: z.enum(["info", "warning", "critical"]).optional(),
-      title: z.string(),
-      message: z.string().optional(),
-      relatedAgentId: z.string().optional(),
-      relatedTaskId: z.string().optional(),
-    }))
-    .mutation(async ({ input }) => {
-      return await db.createAlert(input);
+    .input(
+      z.object({
+        alertType: z.enum([
+          "agent_failure",
+          "task_timeout",
+          "system_error",
+          "task_completion",
+          "performance_degradation",
+        ]),
+        severity: z.enum(["info", "warning", "critical"]).optional(),
+        title: z.string(),
+        message: z.string().optional(),
+        relatedAgentId: z.string().optional(),
+        relatedTaskId: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      return await db.createAlert({
+        userId: ctx.user!.id,
+        ...input,
+      });
     }),
 
   getUnresolved: publicProcedure
-    .query(async () => {
-      return await db.getUnresolvedAlerts();
+    .input(z.object({ userId: z.number() }))
+    .query(async ({ input }) => {
+      return await db.getUnresolvedAlerts(input.userId);
+    }),
+
+  resolve: protectedProcedure
+    .input(z.object({ alertId: z.string() }))
+    .mutation(async ({ input }) => {
+      await db.resolveAlert(input.alertId);
+      return { success: true };
     }),
 });
 
@@ -253,15 +299,20 @@ const alertsRouter = router({
  */
 const integrationRouter = router({
   list: publicProcedure
-    .input(z.object({ active: z.boolean().optional() }).optional())
+    .input(
+      z.object({
+        userId: z.number(),
+        active: z.boolean().optional(),
+      })
+    )
     .query(async ({ input }) => {
-      return await db.listIntegrations(input?.active || undefined);
+      return await db.listIntegrations(input.userId, input.active);
     }),
 
   get: publicProcedure
-    .input(z.object({ framework: z.string() }))
+    .input(z.object({ userId: z.number(), framework: z.string() }))
     .query(async ({ input }) => {
-      return await db.getIntegration(input.framework);
+      return await db.getIntegration(input.userId, input.framework);
     }),
 });
 
@@ -270,14 +321,97 @@ const integrationRouter = router({
  */
 const llmRouter = router({
   list: publicProcedure
-    .input(z.object({ active: z.boolean().optional() }).optional())
+    .input(z.object({ userId: z.number(), active: z.boolean().optional() }))
     .query(async ({ input }) => {
-      return await db.listLLMProviders(input?.active || undefined);
+      return await db.listLLMProviders(input.userId, input.active);
     }),
 
   getDefault: publicProcedure
-    .query(async () => {
-      return await db.getDefaultLLMProvider();
+    .input(z.object({ userId: z.number() }))
+    .query(async ({ input }) => {
+      return await db.getDefaultLLMProvider(input.userId);
+    }),
+});
+
+/**
+ * Execution History Router
+ */
+const historyRouter = router({
+  list: publicProcedure
+    .input(z.object({ taskId: z.string() }))
+    .query(async ({ input }) => {
+      return await db.getTaskHistory(input.taskId);
+    }),
+
+  save: protectedProcedure
+    .input(
+      z.object({
+        taskId: z.string(),
+        workflowId: z.string(),
+        input: z.record(z.string(), z.any()).optional(),
+        output: z.record(z.string(), z.any()).optional(),
+        conversationLog: z.array(z.any()).optional(),
+        metrics: z.record(z.string(), z.any()).optional(),
+        executionTime: z.number(),
+        status: z.enum(["pending", "running", "completed", "failed"]),
+        storageUrl: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      return await db.saveExecutionHistory({
+        userId: ctx.user!.id,
+        ...input,
+      });
+    }),
+});
+
+/**
+ * Consensus Router
+ */
+const consensusRouter = router({
+  save: protectedProcedure
+    .input(
+      z.object({
+        taskId: z.string(),
+        consensusType: z.enum(["voting", "judge-based", "mixture-of-agents"]),
+        agentResults: z.array(z.record(z.string(), z.any())).optional(),
+        finalResult: z.record(z.string(), z.any()).optional(),
+        confidence: z.number().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      return await db.saveConsensusResult({
+        userId: ctx.user!.id,
+        ...input,
+      });
+    }),
+});
+
+/**
+ * Agent Configuration Router
+ */
+const configRouter = router({
+  save: protectedProcedure
+    .input(
+      z.object({
+        agentId: z.string(),
+        workflowId: z.string().optional(),
+        parameters: z.record(z.string(), z.any()).optional(),
+        llmModel: z.string().optional(),
+        systemPrompt: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      return await db.saveAgentConfiguration({
+        userId: ctx.user!.id,
+        ...input,
+      });
+    }),
+
+  get: publicProcedure
+    .input(z.object({ agentId: z.string(), workflowId: z.string().optional() }))
+    .query(async ({ input }) => {
+      return await db.getAgentConfiguration(input.agentId, input.workflowId);
     }),
 });
 
@@ -285,25 +419,27 @@ const llmRouter = router({
  * Main App Router
  */
 export const appRouter = router({
-  system: systemRouter,
+  agents: agentRouter,
+  workflows: workflowRouter,
+  tasks: taskRouter,
+  messages: messageRouter,
+  logs: logRouter,
+  metrics: metricsRouter,
+  alerts: alertsRouter,
+  integrations: integrationRouter,
+  llm: llmRouter,
+  history: historyRouter,
+  consensus: consensusRouter,
+  config: configRouter,
+
   auth: router({
-    me: publicProcedure.query(opts => opts.ctx.user),
+    me: publicProcedure.query((opts) => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {
-      const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return {
         success: true,
       } as const;
     }),
   }),
-  agent: agentRouter,
-  workflow: workflowRouter,
-  task: taskRouter,
-  communication: communicationRouter,
-  monitoring: monitoringRouter,
-  alerts: alertsRouter,
-  integration: integrationRouter,
-  llm: llmRouter,
 });
 
 export type AppRouter = typeof appRouter;
