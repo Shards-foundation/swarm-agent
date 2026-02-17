@@ -186,11 +186,11 @@ export default function Dashboard() {
                     <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border">
                       <div>
                         <p className="text-technical text-xs text-muted-foreground">Health Score</p>
-                        <p className="font-bold text-primary">{agent.healthScore?.toFixed(1)}%</p>
+                        <p className="font-bold text-primary">{agent.healthScore ? Number(agent.healthScore).toFixed(1) : '0'}%</p>
                       </div>
                       <div>
                         <p className="text-technical text-xs text-muted-foreground">Success Rate</p>
-                        <p className="font-bold text-primary">{agent.successRate?.toFixed(1)}%</p>
+                        <p className="font-bold text-primary">{agent.successRate ? Number(agent.successRate).toFixed(1) : '0'}%</p>
                       </div>
                     </div>
                   </Card>
