@@ -1,5 +1,27 @@
 {
   "version": "7",
   "dialect": "mysql",
-  "entries": []
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1771367277565,
+      "tag": "0000_sweet_sabretooth",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1771367415133,
+      "tag": "0001_stormy_squadron_supreme",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1771367443786,
+      "tag": "0002_conscious_spencer_smythe",
+      "breakpoints": true
+    }
+  ]
 }

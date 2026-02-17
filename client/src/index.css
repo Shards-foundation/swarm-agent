@@ -175,3 +175,86 @@
     }
   }
 }
+
+/* Blueprint Design System Additions */
+@layer components {
+  /* Blueprint-style technical card */
+  .card-technical {
+    @apply bg-card text-card-foreground rounded border border-border;
+    @apply p-6 shadow-sm hover:shadow-md transition-all;
+  }
+  
+  /* Statistical display with monospace font */
+  .stat-display {
+    @apply flex flex-col items-center justify-center;
+    @apply p-4 rounded border border-border;
+    @apply bg-muted/30;
+  }
+  
+  .stat-value {
+    font-family: 'Space Mono', monospace;
+    @apply text-2xl font-bold text-primary;
+  }
+  
+  .stat-label {
+    font-family: 'Space Mono', monospace;
+    @apply text-xs uppercase tracking-widest text-muted-foreground mt-2;
+  }
+  
+  /* Blueprint divider with gradient */
+  .divider-blueprint {
+    @apply relative my-8;
+    height: 2px;
+    background: linear-gradient(90deg, transparent 0%, rgba(198, 224, 255, 0.3) 25%, rgba(198, 224, 255, 0.3) 75%, transparent 100%);
+  }
+  
+  /* Typography utilities */
+  .text-blueprint {
+    font-family: 'Inter', sans-serif;
+    font-weight: 900;
+    letter-spacing: -0.02em;
+  }
+  
+  .text-technical {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.875rem;
+    letter-spacing: 0.05em;
+  }
+  
+  /* Dashboard grid */
+  .dashboard-grid {
+    @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6;
+  }
+  
+  /* Accent colors for blueprint aesthetic */
+  .accent-cyan {
+    @apply text-cyan-500 dark:text-cyan-400;
+  }
+  
+  .accent-pink {
+    @apply text-pink-400 dark:text-pink-300;
+  }
+  
+  .bg-accent-cyan {
+    @apply bg-cyan-50 dark:bg-cyan-950/20;
+  }
+  
+  .bg-accent-pink {
+    @apply bg-pink-50 dark:bg-pink-950/20;
+  }
+}
+
+/* Smooth transitions */
+@layer utilities {
+  .transition-smooth {
+    @apply transition-all duration-300 ease-out;
+  }
+  
+  .transition-fast {
+    @apply transition-all duration-150 ease-out;
+  }
+  
+  .gradient-text {
+    @apply bg-gradient-to-r from-blue-600 to-cyan-500 bg-clip-text text-transparent;
+  }
+}
