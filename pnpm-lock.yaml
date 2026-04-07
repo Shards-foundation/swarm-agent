@@ -249,8 +249,8 @@ importers:
         specifier: ^0.27.7
         version: 0.27.7
       pnpm:
-        specifier: ^10.32.1
-        version: 10.32.1
+        specifier: ^10.33.0
+        version: 10.33.0
       postcss:
         specifier: ^8.4.47
         version: 8.5.6
@@ -3946,8 +3946,8 @@ packages:
   pkg-types@2.3.0:
     resolution: {integrity: sha512-SIqCzDRg0s9npO5XQ3tNZioRY1uK06lA41ynBC1YmFTmnY6FjUjVt6s4LoADmwoig1qqD0oK8h1p/8mlMx8Oig==}
 
-  pnpm@10.32.1:
-    resolution: {integrity: sha512-pwaTjw6JrBRWtlY+q07fHR+vM2jRGR/FxZeQ6W3JGORFarLmfWE94QQ9LoyB+HMD5rQNT/7KnfFe8a1Wc0jyvg==}
+  pnpm@10.33.0:
+    resolution: {integrity: sha512-EFaLtKavtYyes2MNqQzJUWQXq+vT+rvmc58K55VyjaFJHp21pUTHatjrdXD1xLs9bGN7LLQb/c20f6gjyGSTGQ==}
     engines: {node: '>=18.12'}
     hasBin: true
 
@@ -8747,7 +8747,7 @@ snapshots:
       exsolve: 1.0.7
       pathe: 2.0.3
 
-  pnpm@10.32.1: {}
+  pnpm@10.33.0: {}
 
   points-on-curve@0.2.0: {}
 
