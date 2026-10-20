@@ -414,6 +414,7 @@ describe("Database Operations", () => {
 
       const retrieved = await db.getAgent(agent.id);
       expect(retrieved).toBeDefined();
+      expect(retrieved?.id).toBe(agent.id);
       if (retrieved) {
         expect(retrieved.name).toBe("Persistence Test Agent");
         expect(retrieved.type).toBe("analysis");

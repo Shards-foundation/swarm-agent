@@ -1,6 +1,8 @@
 # Ultimate Swarm Agents Platform
 
-A production-grade multi-agent orchestration platform that enables coordination, monitoring, and scaling of AI agent swarms working together on complex tasks. Built with 100+ open-source AI projects for maximum flexibility and power.
+**Status:** Alpha. Early prototype with install, typecheck, test, and build in CI. Not production-ready.
+
+A multi-agent orchestration prototype for registering agents, defining workflows, and recording tasks, messages, and metrics. Several integration points are described below; the frameworks named there are not bundled in this repository.
 
 ## Overview
 
@@ -22,7 +24,7 @@ The Ultimate Swarm Agents Platform provides a comprehensive framework for buildi
 
 **Consensus Mechanisms** - Multiple result aggregation strategies including voting-based consensus, judge-based arbitration, and mixture-of-agents approaches.
 
-**Integration Framework** - Plugin architecture supporting 100+ open-source AI projects including LangChain, CrewAI, AutoGPT, Haystack, and LlamaIndex.
+**Integration Framework** - Database tables for recording an integration name and configuration. LangChain, CrewAI, AutoGPT, Haystack, and LlamaIndex are not dependencies of this repository.
 
 **Multi-LLM Support** - Provider abstraction layer enabling seamless switching between OpenAI, Anthropic, and open-source models with automatic fallback logic.
 
@@ -89,23 +91,23 @@ ultimate-swarm-platform/
 ### Prerequisites
 
 - Node.js 22.13.0 or higher
-- pnpm 10.15.1 or higher
-- MySQL 8.0+ or TiDB compatible database
-- Environment variables configured (see `.env.example`)
+- pnpm 10.33.0 (the version in `package.json` `packageManager`)
+- MySQL 8.0+ or a compatible database
+- The environment variables listed below
 
 ### Installation
 
 Clone the repository and install dependencies:
 
 ```bash
-git clone https://github.com/shards-inc/swarm-agent.git
+git clone https://github.com/Shards-foundation/swarm-agent.git
 cd swarm-agent
 pnpm install
 ```
 
 ### Environment Setup
 
-Create a `.env.local` file with required variables:
+Create a `.env.local` file with the variables below. This repository does not include an `.env.example` file.
 
 ```bash
 # Database
@@ -137,10 +139,10 @@ VITE_ANALYTICS_WEBSITE_ID=your-website-id
 Initialize the database schema:
 
 ```bash
-pnpm db:push
+pnpm exec drizzle-kit push
 ```
 
-This command generates and applies migrations to your database.
+This applies `drizzle/schema.ts` to the database. The committed SQL files under `drizzle/` do not match that schema, so `pnpm db:push` (generate, then migrate) is not the setup path.
 
 ### Development
 
@@ -162,20 +164,9 @@ pnpm test
 
 # Run specific test file
 pnpm test server/routers.test.ts
-
-# Run with coverage
-pnpm test -- --coverage
 ```
 
-All tests pass with 33 API contract validations covering:
-- Agent management operations
-- Workflow orchestration
-- Task execution
-- Communication protocols
-- Monitoring and metrics
-- Alert management
-- Integration framework
-- LLM provider management
+`pnpm test` runs the Vitest files under `server/`. Router tests check input shapes in memory. Database tests need `DATABASE_URL` pointing at a MySQL-compatible database with the Drizzle schema applied (`pnpm exec drizzle-kit push`). There is no published coverage percentage.
 
 ### Building for Production
 
@@ -285,58 +276,13 @@ The platform uses a normalized schema supporting:
 
 ## Security Considerations
 
-### Authentication & Authorization
-
-- OAuth 2.0 integration for secure user authentication
-- JWT-based session management with secure cookies
-- Protected procedures requiring authentication
-- Role-based access control (admin/user roles)
-
-### Data Protection
-
-- Parameterized queries preventing SQL injection
-- Input validation on all API endpoints
-- Secure password hashing for sensitive data
-- HTTPS-only communication in production
-- Environment variable management for secrets
-
-### API Security
-
-- CORS configuration for cross-origin requests
-- Rate limiting on API endpoints
-- Request validation with Zod schemas
-- Error handling without information leakage
-- Audit logging for sensitive operations
-
-### Deployment Security
-
-- No hardcoded credentials in source code
-- Environment-based configuration
-- Secure database connection strings
-- SSL/TLS for all network communication
-- Regular dependency updates and security patches
+The server stores a session cookie after the OAuth callback and clears it on logout. Some tRPC procedures are marked protected and some inputs use Zod. This repository does not implement rate limiting, password hashing, CORS middleware, or a documented RBAC policy. Do not treat those as present.
 
 ## Deployment
 
-### Docker Deployment
+### Docker and hosted platforms
 
-Build and run with Docker:
-
-```bash
-docker build -t swarm-agent .
-docker run -p 3000:3000 --env-file .env swarm-agent
-```
-
-### Cloud Deployment
-
-The platform is ready for deployment on:
-
-- **AWS** - EC2, ECS, or Lambda with RDS
-- **Google Cloud** - Cloud Run or Compute Engine with Cloud SQL
-- **Azure** - App Service with Azure Database
-- **Heroku** - Buildpack-based deployment
-- **Railway** - Git-based deployment
-- **Vercel** - Frontend deployment with serverless backend
+This repository does not include a Dockerfile or hosting manifests. `pnpm build` and `pnpm start` run the app locally after the database schema is applied.
 
 ### Environment Variables
 
@@ -410,11 +356,9 @@ Contributions are welcome! Please follow these guidelines:
 
 ### Code Standards
 
-- TypeScript for all code
-- ESLint and Prettier for formatting
-- Comprehensive test coverage
-- Clear documentation
-- Type safety throughout
+- TypeScript for application code
+- Prettier for formatting (`pnpm format`)
+- Tests for behavior you change (`pnpm test`)
 
 ## Troubleshooting
 
@@ -444,15 +388,9 @@ pnpm install
 pnpm build
 ```
 
-## Performance Benchmarks
+## Performance
 
-| Metric | Target | Current |
-|--------|--------|---------|
-| API Response Time | <100ms | <50ms |
-| Database Query Time | <50ms | <30ms |
-| Frontend Load Time | <2s | <1.5s |
-| Test Coverage | >80% | 100% (API layer) |
-| Uptime | 99.9% | 99.95% |
+No benchmark or uptime numbers are published for this repository.
 
 ## Roadmap
 
@@ -479,27 +417,10 @@ For issues, questions, or suggestions:
 3. Create a new issue with detailed information
 4. Contact the development team
 
-## Acknowledgments
+## Version
 
-Built with 100+ open-source AI projects including:
-- LangChain
-- CrewAI
-- AutoGPT
-- Haystack
-- LlamaIndex
-- And many more
-
-## Version History
-
-**1.0.0** (Current)
-- Initial release with all 13 core features
-- Production-grade backend infrastructure
-- Blueprint-inspired UI design
-- Comprehensive test coverage
-- Enterprise-grade security
+`package.json` is at 1.0.0. That number is not a production release.
 
 ---
 
-**Last Updated:** February 17, 2026  
-**Maintainer:** Shards Inc.  
-**Status:** Production Ready
+**Maintainer:** Shards Inc.
