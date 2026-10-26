@@ -138,6 +138,7 @@ export async function createAgent(agentData: {
 
   try {
     await db.insert(swarmAgents).values({
+      id,
       userId: agentData.userId,
       name: agentData.name,
       type: agentData.type as any,
@@ -189,6 +190,36 @@ export async function updateAgentStatus(agentId: string, status: string) {
   await db
     .update(swarmAgents)
     .set({ status: status as any })
+    .where(eq(swarmAgents.id, agentId));
+}
+
+export async function updateAgentMetrics(
+  agentId: string,
+  metrics: {
+    totalExecutions?: number;
+    failedExecutions?: number;
+  }
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const updateData: {
+    totalExecutions?: number;
+    failedExecutions?: number;
+  } = {};
+  if (metrics.totalExecutions !== undefined) {
+    updateData.totalExecutions = metrics.totalExecutions;
+  }
+  if (metrics.failedExecutions !== undefined) {
+    updateData.failedExecutions = metrics.failedExecutions;
+  }
+  if (Object.keys(updateData).length === 0) {
+    return;
+  }
+
+  await db
+    .update(swarmAgents)
+    .set(updateData)
     .where(eq(swarmAgents.id, agentId));
 }
 
@@ -290,7 +321,7 @@ export async function createTask(taskData: {
       status: "pending",
       result: JSON.stringify({}),
     });
-    return { id, ...taskData };
+    return { id, ...taskData, status: "pending" as const };
   } catch (error) {
     console.error("[Database] Failed to create task:", error);
     throw error;
@@ -381,6 +412,10 @@ export async function createMessage(messageData: {
     console.error("[Database] Failed to create message:", error);
     throw error;
   }
+}
+
+export async function getConversationHistory(taskId: string) {
+  return getTaskMessages(taskId);
 }
 
 export async function getTaskMessages(taskId: string) {

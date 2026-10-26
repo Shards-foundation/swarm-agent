@@ -2,7 +2,10 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import * as db from "./db";
 
 describe("Swarm Platform API", () => {
+  const userId = 1;
+
   const testAgentData = {
+    userId,
     name: "TestAgent",
     type: "reasoning" as const,
     description: "Test agent for unit testing",
@@ -10,10 +13,10 @@ describe("Swarm Platform API", () => {
     llmModel: "gpt-4",
     parameters: { temperature: 0.7, maxTokens: 2000 },
     integrationFramework: "langchain",
-    version: "1.0.0",
   };
 
   const testWorkflowData = {
+    userId,
     name: "TestWorkflow",
     description: "Test workflow",
     orchestrationPattern: "sequential" as const,
@@ -23,6 +26,7 @@ describe("Swarm Platform API", () => {
   };
 
   const testTaskData = {
+    userId,
     workflowId: "workflow-123",
     input: { query: "test query" },
     assignedAgents: ["agent-1", "agent-2"],
@@ -41,7 +45,7 @@ describe("Swarm Platform API", () => {
       // Create a test agent first
       await db.createAgent(testAgentData);
       
-      const agents = await db.listAgents({});
+      const agents = await db.listAgents(userId);
       expect(Array.isArray(agents)).toBe(true);
       expect(agents.length).toBeGreaterThan(0);
     });
@@ -66,13 +70,13 @@ describe("Swarm Platform API", () => {
     it("should update agent metrics", async () => {
       const created = await db.createAgent(testAgentData);
       await db.updateAgentMetrics(created.id, {
-        successCount: 10,
-        failureCount: 2,
+        totalExecutions: 10,
+        failedExecutions: 2,
       });
       
       const updated = await db.getAgent(created.id);
-      expect(updated?.successCount).toBe(10);
-      expect(updated?.failureCount).toBe(2);
+      expect(updated?.totalExecutions).toBe(10);
+      expect(updated?.failedExecutions).toBe(2);
     });
   });
 
@@ -87,7 +91,7 @@ describe("Swarm Platform API", () => {
     it("should list workflows", async () => {
       await db.createWorkflow(testWorkflowData);
       
-      const workflows = await db.listWorkflows({});
+      const workflows = await db.listWorkflows(userId);
       expect(Array.isArray(workflows)).toBe(true);
       expect(workflows.length).toBeGreaterThan(0);
     });
@@ -110,7 +114,7 @@ describe("Swarm Platform API", () => {
     });
 
     it("should get workflow templates", async () => {
-      const templates = await db.getWorkflowTemplates();
+      const templates = await db.getWorkflowTemplates(userId);
       expect(Array.isArray(templates)).toBe(true);
     });
   });
@@ -147,6 +151,7 @@ describe("Swarm Platform API", () => {
       
       // Create a log entry
       await db.createExecutionLog({
+        userId,
         taskId: created.id,
         agentId: "agent-1",
         eventType: "execution",
@@ -163,6 +168,7 @@ describe("Swarm Platform API", () => {
   describe("Communication", () => {
     it("should create a message", async () => {
       const messageData = {
+        userId,
         senderId: "agent-1",
         recipientId: "agent-2",
         taskId: "task-123",
@@ -182,6 +188,7 @@ describe("Swarm Platform API", () => {
       
       // Create test messages
       await db.createMessage({
+        userId,
         senderId: "agent-1",
         recipientId: "agent-2",
         taskId,
@@ -197,6 +204,7 @@ describe("Swarm Platform API", () => {
   describe("Monitoring & Observability", () => {
     it("should record a metric", async () => {
       const metricData = {
+        userId,
         agentId: "agent-1",
         taskId: "task-123",
         executionTime: 1500,
@@ -212,6 +220,7 @@ describe("Swarm Platform API", () => {
 
     it("should get agent metrics", async () => {
       await db.recordMetric({
+        userId,
         agentId: "agent-1",
         executionTime: 1000,
         successFlag: true,
@@ -223,6 +232,7 @@ describe("Swarm Platform API", () => {
 
     it("should create an execution log", async () => {
       const logData = {
+        userId,
         taskId: "task-123",
         agentId: "agent-1",
         eventType: "execution" as const,
@@ -240,9 +250,11 @@ describe("Swarm Platform API", () => {
       const taskId = "task-123";
       
       await db.createExecutionLog({
+        userId,
         taskId,
         agentId: "agent-1",
         eventType: "execution",
+        level: "info",
         message: "Test log",
       });
       
@@ -254,6 +266,7 @@ describe("Swarm Platform API", () => {
   describe("Alerts", () => {
     it("should create an alert", async () => {
       const alertData = {
+        userId,
         alertType: "agent_failure" as const,
         severity: "critical" as const,
         title: "Agent Failed",
@@ -269,25 +282,26 @@ describe("Swarm Platform API", () => {
 
     it("should get unresolved alerts", async () => {
       await db.createAlert({
+        userId,
         alertType: "task_timeout",
         severity: "warning",
         title: "Task Timeout",
         message: "Task exceeded timeout",
       });
       
-      const alerts = await db.getUnresolvedAlerts();
+      const alerts = await db.getUnresolvedAlerts(userId);
       expect(Array.isArray(alerts)).toBe(true);
     });
   });
 
   describe("Integration Management", () => {
     it("should list integrations", async () => {
-      const integrations = await db.listIntegrations();
+      const integrations = await db.listIntegrations(userId);
       expect(Array.isArray(integrations)).toBe(true);
     });
 
     it("should get integration by framework", async () => {
-      const integration = await db.getIntegration("langchain");
+      const integration = await db.getIntegration(userId, "langchain");
       // May or may not exist, but should return defined or undefined
       expect(integration === undefined || integration !== undefined).toBe(true);
     });
@@ -295,12 +309,12 @@ describe("Swarm Platform API", () => {
 
   describe("LLM Provider Management", () => {
     it("should list LLM providers", async () => {
-      const providers = await db.listLLMProviders();
+      const providers = await db.listLLMProviders(userId);
       expect(Array.isArray(providers)).toBe(true);
     });
 
     it("should get default LLM provider", async () => {
-      const provider = await db.getDefaultLLMProvider();
+      const provider = await db.getDefaultLLMProvider(userId);
       // May or may not exist, but should return defined or undefined
       expect(provider === undefined || provider !== undefined).toBe(true);
     });
