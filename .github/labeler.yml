@@ -1,0 +1,22 @@
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*.md"
+enhancement:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "client/**"
+          - "scripts/**"
+          - "server/**"
+          - "shared/**"
+          - "check_db.js"
+          - "check_db.mjs"
+          - "cleanup_db.mjs"
+          - "drizzle.config.ts"
+          - "drop_tables.mjs"
+          - "vite.config.ts"
+          - "vitest.config.ts"
+github_actions:
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/workflows/**"
