@@ -7,9 +7,15 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Successful builds on main finish in about one minute. Ten minutes covers
+    # the MySQL health-check window and a cold pnpm install.
+    timeout-minutes: 10
     services:
       mysql:
         image: mysql:8.0
@@ -26,13 +32,15 @@ jobs:
     env:
       DATABASE_URL: mysql://root:ci@127.0.0.1:3306/swarm_platform
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: pnpm
