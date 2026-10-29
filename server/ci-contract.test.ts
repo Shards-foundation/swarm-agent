@@ -16,7 +16,10 @@ describe("CI contract", () => {
   it("installs with the pnpm version declared in package.json", () => {
     const pinned = pkg.packageManager?.split("+")[0];
     expect(pinned).toBe("pnpm@10.33.0");
-    expect(workflow).toContain("pnpm/action-setup@v4");
+    expect(pkg.packageManager).toMatch(/^pnpm@10\.33\.0\+sha512\.[0-9a-f]{128}$/);
+    expect(workflow).toMatch(
+      /^[ \t]*uses:[ \t]*pnpm\/action-setup@[0-9a-f]{40}[ \t]+# v4\.\d+\.\d+[ \t]*$/m,
+    );
     expect(workflow).not.toMatch(/^\s*version:/m);
     expect(workflow).toContain("cache: pnpm");
     expect(workflow).toContain("pnpm install --frozen-lockfile");
